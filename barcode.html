@@ -1,0 +1,368 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta http-equiv="X-UA-Compatible" content="IE=edge">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>FTLab uArt</title>
+    <style>
+        * {
+            background-color: #352e2e;
+            font-family: monospace;
+            color: rgb(60, 255, 1);
+            padding: 0px;
+        }
+    
+        button,
+        datalist {
+            background-color: rgb(85, 85, 85);
+        }
+    
+        input[type=text] {
+            color: rgb(179, 255, 179);
+            background-color: rgb(102, 86, 86);
+            border: 1px solid;
+            border-color: #696 #363 #363 #696;
+        }
+    
+        [type="checkbox"] {
+            vertical-align: middle;
+        }
+    
+        #serialResults {
+            font-family: monospace;
+            white-space: pre;
+            height: 66vh;
+            width: calc(100% - 20px);
+            border-style: solid;
+            overflow: scroll;
+            background-color: rgb(88, 92, 92);
+            padding: 10px;
+            margin: 0px;
+        }
+        label, #inputButton{
+            float: left;
+            margin:13px;
+            line-height: 30px;
+        }
+        #inputButton {
+            width: 50px;
+            border: 1px solid rgb(60, 255, 1);
+            border-radius: 5px;
+            cursor: pointer;
+        }
+        #review {
+            width: 100%;
+            display: flex;
+            margin-bottom:20px;
+            justify-content: space-between;
+        } 
+        #review > input {
+            font-family: monospace;
+            white-space: pre;
+            height: 20px;
+            width: 90%;
+            border-style: solid;
+            overflow: scroll;
+            background-color: rgb(88, 92, 92);
+            padding: 10px;
+            margin: 0px;
+        } 
+        #review > button {
+            width: 4%;
+            height: 44px;
+        } 
+        .active {
+            background-color: rgb(60, 255, 1);
+            color: rgb(88, 92, 92);
+        }                              
+    </style>
+</head>
+<body>
+    <div>
+        <button onclick="connectSerial()">Connect</button>
+        Baud:
+        <input type="text" id="baud" list="baudList" style="width: 10ch;" onclick="this.value = ''"
+            onchange="localStorage.baud = this.value">
+        <datalist id="baudList">
+            <option value="110">110</option>
+            <option value="300">300</option>
+            <option value="600">600</option>
+            <option value="1200">1200</option>
+            <option value="2400">2400</option>
+            <option value="4800">4800</option>
+            <option value="9600">9600</option>
+            <option value="14400">14400</option>
+            <option value="19200">19200</option>
+            <option value="38400">38400</option>
+            <option value="57600">57600</option>
+            <option value="115200">115200</option>
+            <option value="128000">128000</option>
+            <option value="256000">256000</option>
+        </datalist>
+        <button onclick="serialResultsDiv.innerHTML = '';">Clear</button>
+    </div>
+    <div>
+        <label class="selectItem">
+            CODE
+            <input type="text" id="enterCode" maxlength="9"/>
+        </label>
+        <label class="selectItem">
+            시리얼 넘버
+            <input type="text" id="enterSerial" maxlength="6" oninput="numberMaxLength(this);"/>
+        </label>
+        <label class="selectItem">
+            <select id="countList">
+                <option value="addCount">매수</option>
+                <option value="sameCount">동일 매수</option>
+            </select>
+            <input id="enterCount" type="text" value="1">
+        </label>
+        <button id="inputButton">입력</button>
+        <label style="float: right;">
+            사용자지정
+            <input type="text" id="enterCustom"> 
+        </label>
+    </div>
+    <div id="review">
+        <h4>Review </h4>
+        <input type="text" id="lineToSend">
+        <button onclick="sendSerialLine()">보내기</button>
+        <button onclick="sendCharacterNumber()">지우기</button>
+    </div>
+
+    <label for="addLine">
+        <input type="checkbox" id="addLine" onclick="localStorage.addLine = this.checked;" checked>send with /n
+    </label>
+
+    <label for="echoOn">
+        <input type="checkbox" id="echoOn" onclick="localStorage.echoOn = this.checked;" checked>echo
+    </label>
+    <div id="serialResults">
+    </div>
+</body>
+    <script>
+        var port, textEncoder, writableStreamClosed, writer, historyIndex = -1;
+        var alphabet = ['A','B','C','D','E','F','G','H','I','J','K','L','M','N','O','P','Q','R','S','T','U','V','W','X','Y','Z']
+        const lineHistory = [];
+        async function connectSerial() {
+            try {
+                // Prompt user to select any serial port.
+                port = await navigator.serial.requestPort();
+                await port.open({ baudRate: document.getElementById("baud").value });
+                let settings = {};
+
+                if (localStorage.dtrOn == "true") settings.dataTerminalReady = true;
+                if (localStorage.rtsOn == "true") settings.requestToSend = true;
+                if (Object.keys(settings).length > 0) await port.setSignals(settings);
+    
+                
+                textEncoder = new TextEncoderStream();
+                writableStreamClosed = textEncoder.readable.pipeTo(port.writable);
+                writer = textEncoder.writable.getWriter();
+                await listenToPort();
+            } catch (e){
+                alert("직렬 연결 실패 : " + e);
+            }
+        }
+        async function sendCharacterNumber() {
+            document.getElementById("lineToSend").value = String.fromCharCode(document.getElementById("lineToSend").value);
+        }
+
+        async function sendSerialLine() {
+            var countType = document.getElementById('countList')
+            var countValue = countType.value
+            var sendCount = Number(document.getElementById('enterCount').value)
+            var codeLine = review.value
+            if(codeLine != '' && writer != undefined) {
+                if(countValue == 'addCount') {
+                    for(var i = 0; i < sendCount; i++) {
+                        if(i == 0) {
+                            switch (codeTextLng) {
+                                case 6 :
+                                    dataToSend = 'SL80,20,G\nSW240\nSM50,19\nB10,0,4,1,5,40,0,0,' + "'"+ codeLine + "'\n"+ 'T0,45,c,1,1,2,0,N,B,'+ "'"+ codeLine + "'\n"+ 'SD20\nP1'
+                                    break;
+                                case 9 :
+                                    dataToSend = 'SL80,20,G\nSW240\nSM40,19\nB10,0,4,1,5,40,0,0,' + "'"+ codeLine + "'\n"+ 'T0,45,c,1,1,2,0,N,B,'+ "'"+ codeLine + "'\n"+ 'SD20\nP1'
+                                    break;
+                            }
+                        } else if( i == 1 ) {
+                            serial.value = Number(serial.value) + 1
+                            serial.value = serial.value.padStart(serial.maxLength, '0')
+                            switch (codeTextLng) {
+                                case 6 :
+                                    codeLine = codeText.value.toUpperCase() + serial.value
+                                    dataToSend = 'SL80,20,G\nSW240\nSM50,16\nB10,0,4,1,5,40,0,0,' + "'"+ codeLine + "'\n"+ 'T0,45,c,1,1,2,0,N,B,'+ "'"+ codeLine + "'\n"+ 'SD20\nP1'
+                                    break;
+                                case 9 :
+                                    codeLine = codeText.value.toUpperCase() + serial.value
+                                    dataToSend = 'SL80,20,G\nSW240\nSM40,16\nB10,0,4,1,5,40,0,0,' + "'"+ codeLine + "'\n"+ 'T0,45,c,1,1,2,0,N,B,'+ "'"+ codeLine + "'\n"+ 'SD20\nP1'
+                                    break;
+                            }
+                        } else {
+                            serial.value = Number(serial.value) + 1
+                            serial.value = serial.value.padStart(serial.maxLength, '0')
+                            switch (codeTextLng) {
+                                case 6 :
+                                    codeLine = codeText.value.toUpperCase() + serial.value
+                                    dataToSend = 'SL80,20,G\nSW240\nSM50,14\nB10,0,4,1,5,40,0,0,' + "'"+ codeLine + "'\n"+ 'T0,45,c,1,1,2,0,N,B,'+ "'"+ codeLine + "'\n"+ 'SD20\nP1'
+                                    break;
+                                case 9 :
+                                    codeLine = codeText.value.toUpperCase() + serial.value
+                                    dataToSend = 'SL80,20,G\nSW240\nSM40,14\nB10,0,4,1,5,40,0,0,' + "'"+ codeLine + "'\n"+ 'T0,45,c,1,1,2,0,N,B,'+ "'"+ codeLine + "'\n"+ 'SD20\nP1'
+                                    break;
+                            }
+                        }
+                        lineHistory.unshift(dataToSend);
+                        historyIndex = -1; // No history entry selected
+                        if (document.getElementById("addLine").checked == true) dataToSend = dataToSend + "\n";
+                        if (document.getElementById("echoOn").checked == true) appendToTerminal("> " + dataToSend);
+                        await writer.write(dataToSend);
+                        if (dataToSend.trim().startsWith('\x03')) echo(false);
+                    }   
+                } else {
+                    for(var i = 0; i < sendCount; i++) {
+                        if(i == 0) {
+                            switch (codeTextLng) {
+                                case 9 :
+                                    dataToSend = 'SL80,20,G\nSW240\nSM40,19\nB10,0,4,1,5,40,0,0,' + "'"+ codeLine + "'\n"+ 'T0,45,c,1,1,2,0,N,B,'+ "'"+ codeLine + "'\n"+ 'SD20\nP1'
+                                    break;
+                                default :
+                                    dataToSend = 'SL80,20,G\nSW240\nSM50,19\nB10,0,4,1,5,40,0,0,' + "'"+ codeLine + "'\n"+ 'T0,45,c,1,1,2,0,N,B,'+ "'"+ codeLine + "'\n"+ 'SD20\nP1'
+                                    break;
+                            }
+                        } else if( i == 1 ) {
+                            switch (codeTextLng) {
+                                case 9 :
+                                    dataToSend = 'SL80,20,G\nSW240\nSM40,16\nB10,0,4,1,5,40,0,0,' + "'"+ codeLine + "'\n"+ 'T0,45,c,1,1,2,0,N,B,'+ "'"+ codeLine + "'\n"+ 'SD20\nP1'
+                                    break;
+                                default :
+                                    dataToSend = 'SL80,20,G\nSW240\nSM50,16\nB10,0,4,1,5,40,0,0,' + "'"+ codeLine + "'\n"+ 'T0,45,c,1,1,2,0,N,B,'+ "'"+ codeLine + "'\n"+ 'SD20\nP1'
+                                    break;
+                            }
+                        } else {
+                            switch (codeTextLng) {
+                                case 9 :
+                                    dataToSend = 'SL80,20,G\nSW240\nSM40,14\nB10,0,4,1,5,40,0,0,' + "'"+ codeLine + "'\n"+ 'T0,45,c,1,1,2,0,N,B,'+ "'"+ codeLine + "'\n"+ 'SD20\nP1'
+                                    break;
+                                default :
+                                    dataToSend = 'SL80,20,G\nSW240\nSM50,14\nB10,0,4,1,5,40,0,0,' + "'"+ codeLine + "'\n"+ 'T0,45,c,1,1,2,0,N,B,'+ "'"+ codeLine + "'\n"+ 'SD20\nP1'
+                                    break;
+                            }
+                        }
+                        lineHistory.unshift(dataToSend);
+                        historyIndex = -1; // No history entry selected
+                        if (document.getElementById("addLine").checked == true) dataToSend = dataToSend + "\n";
+                        if (document.getElementById("echoOn").checked == true) appendToTerminal("> " + dataToSend);
+                        await writer.write(dataToSend);
+                        if (dataToSend.trim().startsWith('\x03')) echo(false);
+                    }
+                }
+            } else if(writer == undefined) {
+                alert('포트를 연결해주세요')
+            }
+        }
+    
+        async function listenToPort() {
+            const textDecoder = new TextDecoderStream();
+            const readableStreamClosed = port.readable.pipeTo(textDecoder.writable);
+            const reader = textDecoder.readable.getReader();
+
+            // Listen to data coming from the serial device.
+            while (true) {
+                const { value, done } = await reader.read();
+                if (done) {
+                    // Allow the serial port to be closed later.
+                    console.log('[readLoop] DONE', done);
+                    reader.releaseLock();
+                    break;
+                }
+                // value is a string.
+                appendToTerminal(value);
+            }
+        }
+        const serialResultsDiv = document.getElementById("serialResults");
+        async function appendToTerminal(newStuff) {
+            serialResultsDiv.innerHTML += newStuff;
+            if (serialResultsDiv.innerHTML.length > 3000) serialResultsDiv.innerHTML = serialResultsDiv.innerHTML.slice(serialResultsDiv.innerHTML.length - 3000);
+
+            //scroll down to bottom of div
+            serialResultsDiv.scrollTop = serialResultsDiv.scrollHeight;
+        }
+        function scrollHistory(direction) {
+            // Clamp the value between -1 and history length
+            historyIndex = Math.max(Math.min(historyIndex + direction, lineHistory.length - 1), -1);
+            if (historyIndex >= 0) {
+                document.getElementById("lineToSend").value = lineHistory[historyIndex];
+            } else {
+                document.getElementById("lineToSend").value = "";
+            }
+        }
+
+        document.getElementById("baud").value = (localStorage.baud == undefined ? 9600 : localStorage.baud);
+        document.getElementById("addLine").checked = (localStorage.addLine == "false" ? false : true);
+        document.getElementById("echoOn").checked = (localStorage.echoOn == "false" ? false : true);
+
+        var codeText = document.getElementById('enterCode')
+        var codeTextLng 
+        var count = document.getElementById('enterCount')
+        
+        codeText.addEventListener('keyup', () => {
+            if(window.event.keyCode == 13) {
+                serial.value =''
+                codeTextLng = codeText.value.length
+                console.log(codeTextLng)
+            }
+        })
+
+    
+        var serial = document.getElementById('enterSerial')
+        var review = document.getElementById('lineToSend')
+        function numberMaxLength(e) {
+            if(codeTextLng == 9) {
+                e.maxLength = 4
+            } else {
+                e.maxLength = 6
+            }
+
+            e.addEventListener('keyup', () => {
+                if(window.event.keyCode == 13) {
+                    e.value = e.value.padStart(e.maxLength, '0')
+                }
+            })
+
+        }
+
+        document.getElementById('inputButton').addEventListener('click', () => {
+            userText.value = ''
+            if(codeText.value != '' && serial.value != '') {
+                review.value = codeText.value.toUpperCase() + serial.value
+            } else {
+                var selectItem = document.getElementsByClassName('selectItem')
+                for(var i = 0; i < selectItem.length; i++) {
+                    if(selectItem[i].children[0].value == '') {
+                        alert(selectItem[i].innerText + '을(를) 입력해주세요.')
+                        break;
+                    }
+                }
+            }
+        })
+
+        var userText = document.getElementById('enterCustom') 
+        userText.addEventListener('keyup', () => {
+            codeText.value = ''
+            serial.value = ''
+            review.value = ''
+            count.value = 1
+            var countType = document.getElementById('countList')
+            countType.value = 'sameCount'
+
+            if(window.event.keyCode == 13) {
+                review.value = userText.value
+            }
+        })
+
+    
+
+    </script>
+</html>
